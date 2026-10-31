@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/group_height"
+    android:background="@drawable/item_group_bg"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="12dp">
+
+    <TextView
+        android:id="@+id/groupName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:duplicateParentState="true"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text_group_title"
+        android:textSize="@dimen/text_group"
+        android:textStyle="bold"
+        tools:text="央视" />
+
+    <TextView
+        android:id="@+id/groupCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
+        android:duplicateParentState="true"
+        android:textColor="@color/text_group_meta"
+        android:textSize="@dimen/text_meta"
+        tools:text="22 个频道" />
+
+    <TextView
+        android:id="@+id/groupArrow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:duplicateParentState="true"
+        android:textColor="@color/text_group_meta"
+        android:textSize="@dimen/text_meta"
+        tools:text="▼" />
+</LinearLayout>

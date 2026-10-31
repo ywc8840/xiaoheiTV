@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_main">#FF0F1318</color>
+    <!-- 图标专用（反色版）：仅用于 launcher 图标，不改动界面主题 -->
+    <color name="ic_bg">#FFFFFFFF</color>
+    <color name="ic_ink">#FF0F1318</color>
+    <color name="bg_list">#FF161C24</color>
+    <color name="bg_list_header">#FF1D2530</color>
+    <color name="bg_item_focused">#FF1F6FEB</color>
+    <color name="bg_item_playing">#FF17304D</color>
+    <color name="text_primary">#FFF0F6FC</color>
+    <color name="text_secondary">#FF9BA8B8</color>
+    <color name="accent">#FF1F6FEB</color>
+    <color name="live_red">#FFE5534B</color>
+</resources>
