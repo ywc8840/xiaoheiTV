@@ -40,7 +40,7 @@ import com.xiaohei.tv.ui.SettingsActivity
  *   OK / →  左栏时进入右栏（「向右展开」）；右栏时播放高亮频道
  *   ← / 返回 焦点回到左栏（「收起」）
  *   长按 OK  收藏 / 取消收藏
- *   分组栏按返回 → 收起面板全屏播放；右栏对正在播的台按 OK → 全屏
+ *   返回     逐层退出：右栏 → 左栏 → 全屏 → 回到电视首页
  *
  * 所有按键统一在 [dispatchKeyEvent] 里处理，避免 RecyclerView 抢走 OK 与左右键
  * （1.6.3 的 bug 就是 OK/左右键被 onKeyDown 全局拦截成「全屏/切台」，
@@ -104,9 +104,6 @@ class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val hideInfo = Runnable { infoBar.visibility = View.GONE }
-    private val autoHide = Runnable {
-        if (!fullscreen) applyFullscreen(true, persist = false)
-    }
     private val longPressRunnable = Runnable {
         longPressFired = true
         val ch = focusedChannel()
@@ -203,11 +200,10 @@ class MainActivity : Activity() {
         groupAdapter.setSelected(groupIndex)
         channelAdapter.submit(bucket.channels, store.favorites)
         pendingChannelPos = -1
-        laneTitle.text = "${bucket.name} · ${bucket.channels.size} 个频道"
+        laneTitle.text = "${bucket.name} · ${bucket.channels.size}"
         // 若当前播放台属于该组，滚到它
         val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
         if (pos >= 0) channelList.scrollToPosition(pos)
-        resetAutoHide()
     }
 
     /** 焦点进入右栏（「向右展开」） */
@@ -221,7 +217,6 @@ class MainActivity : Activity() {
         if (pos < 0) pos = 0
         pendingChannelPos = -1
         focusChannelAt(pos)
-        resetAutoHide()
     }
 
     /** 焦点回到左栏（「收起」） */
@@ -230,7 +225,6 @@ class MainActivity : Activity() {
         pendingChannelPos = -1
         groupList.requestFocus()
         focusGroupAt(groupIndex)
-        resetAutoHide()
     }
 
     private fun focusGroupAt(index: Int) {
@@ -302,7 +296,6 @@ class MainActivity : Activity() {
         // 只移动高亮，不自动播放：等用户按 OK 确认后再切台，
         // 避免一路按方向键时把中间每一台都拉起来缓冲
         focusChannelAt(next)
-        resetAutoHide()
     }
 
     // ---------------------------------------------------------------- 全屏
@@ -321,16 +314,7 @@ class MainActivity : Activity() {
         fullscreen = on
         listPanel.visibility = if (on) View.GONE else View.VISIBLE
         if (persist) store.fullscreen = on
-        if (on) {
-            handler.removeCallbacks(autoHide)
-        } else {
-            backToGroups()
-        }
-    }
-
-    private fun resetAutoHide() {
-        handler.removeCallbacks(autoHide)
-        if (!fullscreen) handler.postDelayed(autoHide, 30_000)
+        if (!on) backToGroups()
     }
 
     // ---------------------------------------------------------------- 加载
@@ -365,7 +349,6 @@ class MainActivity : Activity() {
                 focusInGroups = true
                 groupList.requestFocus()
                 focusGroupAt(groupIndex)
-                resetAutoHide()
                 loadEpg()
                 if (target.name == last) {
                     Toast.makeText(this, "继续播放：${target.name}", Toast.LENGTH_SHORT).show()
@@ -418,7 +401,6 @@ class MainActivity : Activity() {
         if (pos >= 0) channelList.smoothScrollToPosition(pos)
         showInfo()
         playCurrentUrl()
-        resetAutoHide()
         // setPlaying 会整列重绘，把焦点找回来（不打断用户当前所在栏）
         if (focusInGroups) {
             groupList.postDelayed({ focusGroupAt(groupIndex) }, 60)
@@ -504,7 +486,6 @@ class MainActivity : Activity() {
             if (added) "已收藏：${ch.name}" else "已取消收藏：${ch.name}",
             Toast.LENGTH_SHORT
         ).show()
-        resetAutoHide()
         channelList.postDelayed({
             val pos = channelAdapter.positionOf(ch.name)
             if (pos >= 0) focusChannelAt(pos)
@@ -581,21 +562,24 @@ class MainActivity : Activity() {
 
         when (code) {
             KeyEvent.KEYCODE_MENU -> {
-                handler.removeCallbacks(autoHide)
                 startActivity(Intent(this, SettingsActivity::class.java))
                 return true
             }
             KeyEvent.KEYCODE_BACK -> {
+                // 返回键逐层退出，最后一层回到电视首页：
+                //   焦点在右栏 → 回到左栏
+                //   焦点在左栏（列表展开）→ 收起面板，全屏播放
+                //   已经在全屏 → 退出应用，回到桌面
                 if (fullscreen) {
-                    applyFullscreen(false, persist = true)
+                    finish()
                     return true
                 }
                 if (!focusInGroups) {
                     backToGroups()
                     return true
                 }
-                // 已在分组栏：收起面板，全屏播放
                 applyFullscreen(true, persist = true)
+                showInfo()
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
@@ -648,7 +632,6 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         player?.pause()
-        handler.removeCallbacks(autoHide)
     }
 
     override fun onResume() {
@@ -657,7 +640,6 @@ class MainActivity : Activity() {
             loadChannels()
         } else {
             player?.play()
-            resetAutoHide()
         }
     }
 
