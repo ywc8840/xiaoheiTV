@@ -36,11 +36,11 @@ import com.xiaohei.tv.ui.SettingsActivity
  *   右栏＝当前选中分组下的频道
  *
  * 按键：
- *   ↑↓      左栏切分组（右栏即时跟随） / 右栏切频道（停留 0.8 秒自动播放）
- *   OK / →  焦点进入右栏（「向右展开」）
+ *   ↑↓      左栏切分组（右栏即时跟随） / 右栏移动高亮（不自动播放）
+ *   OK / →  左栏时进入右栏（「向右展开」）；右栏时播放高亮频道
  *   ← / 返回 焦点回到左栏（「收起」）
  *   长按 OK  收藏 / 取消收藏
- *   分组栏按返回 → 收起面板全屏播放；右栏对同一台再按 OK → 全屏
+ *   分组栏按返回 → 收起面板全屏播放；右栏对正在播的台按 OK → 全屏
  *
  * 所有按键统一在 [dispatchKeyEvent] 里处理，避免 RecyclerView 抢走 OK 与左右键
  * （1.6.3 的 bug 就是 OK/左右键被 onKeyDown 全局拦截成「全屏/切台」，
@@ -80,6 +80,13 @@ class MainActivity : Activity() {
 
     /** true＝焦点在左栏分组，false＝焦点在右栏频道 */
     private var focusInGroups = true
+
+    /** 右栏正在移动焦点的目标位置（连按方向键时用它做基准，避免 30ms 内多次按键算错） */
+    private var pendingChannelPos = -1
+    private var pendingChannelAt = 0L
+
+    /** 最近一次把焦点移到右栏第几项，用于取消尚未执行完的焦点任务 */
+    private var focusChannelTask: Runnable? = null
 
     /** 长按 OK 已触发（用于区分短按与长按） */
     private var longPressFired = false
@@ -195,6 +202,7 @@ class MainActivity : Activity() {
         val bucket = groups[groupIndex]
         groupAdapter.setSelected(groupIndex)
         channelAdapter.submit(bucket.channels, store.favorites)
+        pendingChannelPos = -1
         laneTitle.text = "${bucket.name} · ${bucket.channels.size} 个频道"
         // 若当前播放台属于该组，滚到它
         val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
@@ -211,6 +219,7 @@ class MainActivity : Activity() {
         channelList.requestFocus()
         var pos = channelAdapter.positionOf(currentChannel?.name ?: "")
         if (pos < 0) pos = 0
+        pendingChannelPos = -1
         focusChannelAt(pos)
         resetAutoHide()
     }
@@ -218,6 +227,7 @@ class MainActivity : Activity() {
     /** 焦点回到左栏（「收起」） */
     private fun backToGroups() {
         focusInGroups = true
+        pendingChannelPos = -1
         groupList.requestFocus()
         focusGroupAt(groupIndex)
         resetAutoHide()
@@ -231,23 +241,41 @@ class MainActivity : Activity() {
     }
 
     private fun focusChannelAt(index: Int) {
-        channelList.scrollToPosition(index)
-        channelList.postDelayed({
-            channelList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
-        }, 30)
+        focusChannelTask?.let { handler.removeCallbacks(it) }
+        // 只在目标不在可视范围内时滚动，并让它落在偏上位置（留出后续 ↑↓ 的空间）。
+        // 直接 scrollToPosition 会让目标贴边，回绕到列表开头时还会算错位置。
+        val lm = channelList.layoutManager as? LinearLayoutManager
+        if (lm != null) {
+            val first = lm.findFirstVisibleItemPosition()
+            val last = lm.findLastVisibleItemPosition()
+            if (index < first || index > last || first == RecyclerView.NO_POSITION) {
+                lm.scrollToPositionWithOffset(index, channelList.height / 3)
+            }
+        }
+        val task = Runnable {
+            val vh = channelList.findViewHolderForAdapterPosition(index)
+            val target = vh?.itemView ?: channelList.getChildAt(0)
+            target?.requestFocus()
+        }
+        focusChannelTask = task
+        handler.postDelayed(task, 30)
     }
 
     private fun focusedChannel(): Channel? {
         if (focusInGroups) return currentChannel
-        val focused = channelList.focusedChild ?: return currentChannel
-        val pos = channelList.getChildAdapterPosition(focused)
-        return if (pos >= 0) channelAdapter.channelAt(pos) else currentChannel
+        return channelAdapter.channelAt(focusedChannelPosition()) ?: currentChannel
     }
 
     private fun focusedChannelPosition(): Int {
-        val focused = channelList.focusedChild ?: return 0
-        val pos = channelList.getChildAdapterPosition(focused)
-        return if (pos >= 0) pos else 0
+        val focused = channelList.focusedChild
+        if (focused != null) {
+            val pos = channelList.getChildAdapterPosition(focused)
+            if (pos >= 0) return pos
+        }
+        // 焦点意外丢失时用「上次目标位置」或「正在播放的台」兜底，别复位到 0 导致跳台
+        if (pendingChannelPos >= 0) return pendingChannelPos
+        val playing = channelAdapter.positionOf(currentChannel?.name ?: "")
+        return if (playing >= 0) playing else 0
     }
 
     private fun moveGroupFocus(offset: Int) {
@@ -261,12 +289,19 @@ class MainActivity : Activity() {
     private fun moveChannelFocus(offset: Int) {
         val n = channelAdapter.size()
         if (n == 0) return
-        val next = ((focusedChannelPosition() + offset) % n + n) % n
+        // 连按方向键时 30ms 内的焦点任务还没落地，用上次的目标位置做基准，避免漏格
+        val now = SystemClock.uptimeMillis()
+        val base = if (pendingChannelPos >= 0 && now - pendingChannelAt < 400) {
+            pendingChannelPos
+        } else {
+            focusedChannelPosition()
+        }
+        val next = ((base + offset) % n + n) % n
+        pendingChannelPos = next
+        pendingChannelAt = now
+        // 只移动高亮，不自动播放：等用户按 OK 确认后再切台，
+        // 避免一路按方向键时把中间每一台都拉起来缓冲
         focusChannelAt(next)
-        channelList.postDelayed({
-            val ch = channelAdapter.channelAt(next)
-            if (ch != null && ch.name != currentChannel?.name) playChannel(ch)
-        }, 800)
         resetAutoHide()
     }
 
@@ -377,6 +412,7 @@ class MainActivity : Activity() {
         }
         store.lastChannelName = channel.name
         channelAdapter.setPlaying(channel.name)
+        pendingChannelPos = -1
         errorHint.visibility = View.GONE
         val pos = channelAdapter.positionOf(channel.name)
         if (pos >= 0) channelList.smoothScrollToPosition(pos)

@@ -161,7 +161,7 @@
             android:background="@color/bg_list_header"
             android:paddingHorizontal="12dp"
             android:paddingVertical="8dp"
-            android:text="OK / → 展开分组　← / 返回 收起　长按 OK 收藏"
+            android:text="↑↓ 选台　OK 播放 / 展开　← 返回　长按 OK 收藏"
             android:textColor="@color/text_secondary"
             android:textSize="10sp" />
     </LinearLayout>
