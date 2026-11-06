@@ -17,6 +17,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.xiaohei.tv.data.ChannelGroups
@@ -24,6 +25,7 @@ import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.model.Channel
+import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
@@ -152,11 +154,19 @@ class MainActivity : Activity() {
         channelList.adapter = channelAdapter
         groupList.requestFocus()
 
-        player = ExoPlayer.Builder(this).build().also {
-            playerView.useController = false
-            playerView.player = it
-            it.addListener(playerListener)
-        }
+        player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(
+                // 播放列表先经广告过滤器再交给解码器：只改清单，不动画面
+                DefaultMediaSourceFactory(
+                    AdFilterDataSourceFactory(this) { store.adBlock }
+                )
+            )
+            .build()
+            .also {
+                playerView.useController = false
+                playerView.player = it
+                it.addListener(playerListener)
+            }
 
         // 启动时始终显示两栏列表：不再恢复「上次是全屏」的状态，
         // 否则用户开机后看不到列表，会以为分组功能没了（按方向键才唤出）
